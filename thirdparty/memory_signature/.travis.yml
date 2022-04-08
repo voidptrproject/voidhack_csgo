@@ -1,0 +1,83 @@
+language: cpp
+sudo: required
+dist: trusty
+
+matrix:
+  allow_failures:
+    - env: COMPILER='clang++-4.0' BUILD_TYPE='Debug' SANITIZE_ADDRESS='OFF' SANITIZE_MEMORY='ON'
+
+  include:
+    # Linux C++14 GCC builds
+    - os: linux
+      compiler: gcc
+      addons: &gcc6
+        apt:
+          sources: ['ubuntu-toolchain-r-test']
+          packages: ['g++-6']
+      env: COMPILER='g++-6' BUILD_TYPE='Release' SANITIZE_ADDRESS='OFF' SANITIZE_MEMORY='OFF'
+
+    - os: linux
+      compiler: gcc
+      addons: *gcc6
+      env: COMPILER='g++-6' BUILD_TYPE='Debug' SANITIZE_ADDRESS='OFF' SANITIZE_MEMORY='OFF'
+
+    # Linux C++14 Clang builds
+    - os: linux
+      compiler: clang
+      addons: &clang40
+        apt:
+          sources: ['llvm-toolchain-trusty-4.0', 'ubuntu-toolchain-r-test']
+          packages: ['clang-4.0', 'g++-6']
+      env: COMPILER='clang++-4.0' BUILD_TYPE='Release' SANITIZE_ADDRESS='OFF' SANITIZE_MEMORY='OFF'
+
+    - os: linux
+      compiler: clang
+      addons: *clang40
+      env: COMPILER='clang++-4.0' BUILD_TYPE='Debug' SANITIZE_ADDRESS='OFF' SANITIZE_MEMORY='OFF'
+
+    # Linux c++ Clang sanitized builds
+    - os: linux
+      compiler: clang
+      addons: *clang40
+      env: COMPILER='clang++-4.0' BUILD_TYPE='Debug' SANITIZE_ADDRESS='ON' SANITIZE_MEMORY='OFF'
+
+    - os: linux
+      compiler: clang
+      addons: *clang40
+      env: COMPILER='clang++-4.0' BUILD_TYPE='Debug' SANITIZE_ADDRESS='OFF' SANITIZE_MEMORY='ON'
+
+    # OSX C++14 Clang Builds
+    - os: osx
+      osx_image: xcode8.3
+      compiler: clang
+      env: COMPILER='clang++' BUILD_TYPE='Debug' SANITIZE_ADDRESS='OFF' SANITIZE_MEMORY='OFF'
+
+    - os: osx
+      osx_image: xcode8.3
+      compiler: clang
+      env: COMPILER='clang++' BUILD_TYPE='Release' SANITIZE_ADDRESS='OFF' SANITIZE_MEMORY='OFF'
+
+
+install:
+  - DEPS_DIR="${TRAVIS_BUILD_DIR}/deps"
+  - mkdir -p ${DEPS_DIR} && cd ${DEPS_DIR}
+  - |
+    if [[ "${TRAVIS_OS_NAME}" == "linux" ]]; then
+      CMAKE_URL="http://cmake.org/files/v3.10/cmake-3.10.0-Linux-x86_64.tar.gz"
+      mkdir cmake && travis_retry wget --no-check-certificate --quiet -O - ${CMAKE_URL} | tar --strip-components=1 -xz -C cmake
+      export PATH=${DEPS_DIR}/cmake/bin:${PATH}
+    elif [[ "${TRAVIS_OS_NAME}" == "osx" ]]; then
+      which cmake || brew install cmake
+    fi
+before_script:
+  - export MSAN_SYMBOLIZER_PATH=${MSAN_SYMBOLIZER_PATH:-$(which llvm-symbolizer)}
+  - export CXX=${COMPILER}
+  - cd ${TRAVIS_BUILD_DIR}
+  - mkdir Build
+  - cd Build
+  - cmake ../ -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DENABLE_ASAN=${SANITIZE_ADDRESS} -DENABLE_MSAN=${SANITIZE_MEMORY} -Wdev
+
+
+script:
+  - make -j 2
+  - sudo ctest -V -j 2
