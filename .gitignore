@@ -364,3 +364,5 @@ FodyWeavers.xsd
 
 .vscode/
 build/
+
+!thirdparty/directx_sdk/lib/*
