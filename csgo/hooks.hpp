@@ -25,11 +25,15 @@ namespace hooks {
 		hook_t(func new_function) : hook_fn((LPVOID)new_function) {}
 		~hook_t() {}
 
-		func original;
+		func original_fn;
 		LPVOID hook_fn;
 
-		void hook(uintptr_t address) { internal::hook((LPVOID)address, (LPVOID)hook_fn, (LPVOID*)&original); }
-		void unhook() { internal::unhook((LPVOID)original); }
+		template <typename function_type> inline function_type original() {
+			return reinterpret_cast<function_type>(original_fn);
+		}
+
+		inline void hook(uintptr_t address) { internal::hook((LPVOID)address, (LPVOID)hook_fn, (LPVOID*)&original_fn); }
+		inline void unhook() { internal::unhook((LPVOID)original_fn); }
 	};
 
 	void add_listener(e_hook_type hook, void* listener);
