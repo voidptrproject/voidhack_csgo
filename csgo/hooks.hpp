@@ -19,25 +19,44 @@ namespace hooks {
 		void unhook(LPVOID address);
 	}
 
-	template <typename func> struct hook_t {
+	struct hook_t {
 		hook_t() {}
-		hook_t(LPVOID new_function) : hook_fn(new_function) {}
-		hook_t(func new_function) : hook_fn((LPVOID)new_function) {}
+		hook_t(LPVOID new_function) : hook_fn(new_function), original_fn(0) {}
+		hook_t(hook_t&) = default;
+		hook_t(hook_t&&) = default;
 		~hook_t() {}
 
-		func original_fn;
+		LPVOID original_fn;
 		LPVOID hook_fn;
 
-		template <typename function_type> inline function_type original() {
-			return reinterpret_cast<function_type>(original_fn);
+		template <typename fnt> inline fnt original() {
+			return reinterpret_cast<fnt>(original_fn);
 		}
 
-		inline void hook(uintptr_t address) { internal::hook((LPVOID)address, (LPVOID)hook_fn, (LPVOID*)&original_fn); }
+		inline auto hook(uintptr_t address, LPVOID hook_fn) { internal::hook((LPVOID)address, (LPVOID)hook_fn, (LPVOID*)&original_fn); }
 		inline void unhook() { internal::unhook((LPVOID)original_fn); }
 	};
 
-	void add_listener(e_hook_type hook, void* listener);
+	void add_listener(e_hook_type hook_t, void* listener);
 
 	void initialize_hooks();
 	void shutdown_hooks();
+}
+
+namespace utils {
+	namespace sendpackets {
+		extern bool sendpackets_state;
+		inline void apply_sendpackets() {
+			/*
+				mov bl, 1	; in CL_Move
+				Just replace 1 with sendpackets_state :/
+				Mb in csgo exists other way to change sendpackets but i`m lazy for this
+			*/
+			static memory::address_t mov_bl_1_address({ "B3 01 8B 01 8B 40 10" }, memory::engine_module);
+			DWORD old;
+			VirtualProtect((LPVOID)(mov_bl_1_address.address + 0x1), sizeof(bool), PAGE_EXECUTE_READWRITE, &old);
+			memset((LPVOID)(mov_bl_1_address.address + 0x1), sendpackets_state, sizeof(bool));
+			VirtualProtect((LPVOID)(mov_bl_1_address.address + 0x1), sizeof(bool), old, 0);
+		}
+	}
 }

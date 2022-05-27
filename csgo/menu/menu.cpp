@@ -150,18 +150,17 @@ void menu::render_menu() {
 	}
 }
 
-void __fastcall LockCursorHk(i_surface*, void* edx);
-hooks::hook_t<void(__thiscall*)(i_surface*)> lock_cursor_hook(LockCursorHk);
+hooks::hook_t lock_cursor_hook;
 void __fastcall LockCursorHk(i_surface* self, void* edx) {
 	if (menu::MenuOpen())
 		return self->unlock_cursor();
-	return lock_cursor_hook.original(self);
+	return lock_cursor_hook.original<void(__thiscall*)(i_surface*)>()(self);
 }
 
 void menu::InitializeMenu() {
   	static int OpenMenuKey = VK_INSERT;
 	
-	lock_cursor_hook.hook(interfaces::surface.get_virtual_table()[67]);
+	lock_cursor_hook.hook(interfaces::surface.get_virtual_table()[67], LockCursorHk);
 
 	input::add_handler({"MenuOpen", &OpenMenuKey, [&](input::EKeyState state) {
 		if (state == input::EKeyState::Released)

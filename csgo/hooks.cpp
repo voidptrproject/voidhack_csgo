@@ -28,29 +28,33 @@ using namespace hooks;
 
 static auto warning = memory::symbol_t<void(__cdecl*)(char const*, ...)>::get_symbol(memory::tier0_module, "Warning").ptr;
 
+bool utils::sendpackets::sendpackets_state = true;
+
+hook_t cl_move_hook;
+hook_t end_scene_hook;
+hook_t create_move_hook;
+hook_t frame_stage_notify_hook;
+
 inline auto& get_listeners() {
 	static std::map<hooks::e_hook_type, std::vector<void*>> hook_listeners;
 	return hook_listeners;
 }
 
-hook_t<void(__fastcall*)(float, bool)> cl_move_hook([](float a, bool b) {
+void __fastcall cl_move_hk(float a, bool b) {
 	for (auto& i : get_listeners()[hooks::e_hook_type::cl_move])
 		((hooks::cl_move_listener)i)(a, b);
-	return cl_move_hook.original(a, b);
-});
-
-long __stdcall end_scane_hooked_fn(IDirect3DDevice9* device);
-hook_t<long(__stdcall*)(IDirect3DDevice9*)> end_scene_hook(end_scane_hooked_fn);
-long __stdcall end_scane_hooked_fn(IDirect3DDevice9* device) {
-	render::internal::render_hook(device, (uintptr_t)_ReturnAddress());
-	return end_scene_hook.original(device);
+	utils::sendpackets::apply_sendpackets();
+	return cl_move_hook.original<void(__stdcall*)(float, bool)>()(a, b);
 }
 
-bool __fastcall create_move_hk(void* self, void* edx, float frame_time, c_user_cmd* cmd);
-hook_t<bool(__thiscall*)(i_client_mode*, float, c_user_cmd*)> create_move_hook (create_move_hk);
+long __stdcall end_scane_hooked_fn(IDirect3DDevice9* device) {
+	render::internal::render_hook(device, (uintptr_t)_ReturnAddress());
+	return end_scene_hook.original<long(__stdcall*)(IDirect3DDevice9*)>()(device);
+}
+
 bool __fastcall create_move_hk(void* self, void* edx, float frame_time, c_user_cmd* cmd) {
 	if (!cmd || cmd->command_number == 0 || !interfaces::engine->is_in_game())
-		return create_move_hook.original((i_client_mode*)self, frame_time, cmd);
+		return create_move_hook.original<bool(__thiscall*)(void*, float, c_user_cmd*)>()(self, frame_time, cmd);
 
 	if (menu::MenuOpen()) {
 		cmd->buttons &= ~IN_ATTACK;
@@ -64,7 +68,7 @@ bool __fastcall create_move_hk(void* self, void* edx, float frame_time, c_user_c
 			if (((hooks::create_move_listener)i)(frame_time, cmd) && !_return)
 				_return = true;
 
-	create_move_hook.original((i_client_mode*)self, frame_time, cmd);
+	create_move_hook.original<bool(__thiscall*)(void*, float, c_user_cmd*)>()(self, frame_time, cmd);
 
 	return _return;
 }
@@ -113,16 +117,16 @@ LRESULT STDMETHODCALLTYPE hooked_wndproc(HWND window, UINT message_type, WPARAM 
 	return CallWindowProc(original_wndproc, window, message_type, w_param, l_param);
 }
 
-hook_t<void(__fastcall*)(chl_client*, void* edx, int)> frame_stage_notify_hook([](chl_client* client, void* edx, int frame_stage) {
+void __fastcall frame_stage_hk(chl_client* client, void* edx, int frame_stage) {
 	for (auto& i : get_listeners()[hooks::e_hook_type::frame_stage_notify])
-		if (i) ((hooks::frame_stage_notify_listener)i)(frame_stage);
-
-	return frame_stage_notify_hook.original(client, edx, frame_stage);
-});
+		if (i) ((hooks::frame_stage_notify_listener)i)(frame_stage); 
+	return frame_stage_notify_hook.original<void(__thiscall*)(chl_client*, int)>()(client, frame_stage);
+}
 
 struct basic_hook_data {
 	LPVOID address; LPVOID new_function; LPVOID* original;
 };
+
 auto& hooks_to_initialization() {
 	static std::vector<basic_hook_data> hti;
 	return hti;
@@ -140,23 +144,27 @@ void hooks::initialize_hooks() {
 	std::string modules[]{ "client.dll", "engine.dll", "studiorender.dll", "materialsystem.dll"};
 	std::array<byte, 6> patch({ 0xB0, 0x01, 0xC2, 0x04, 0x00, 0x90 });
 	for (auto& base : modules) {
-		auto module = memory::module_t(base);
+		memory::module_t module(base);
 		if (module.get_handle() == INVALID_HANDLE_VALUE)
 			continue;
 
-		auto address = memory::address_t({ "55 8B EC 56 8B F1 33 C0 57 8B 7D 08" }, module);
+		memory::address_t address({ "55 8B EC 56 8B F1 33 C0 57 8B 7D 08" }, module);
 		if (!(void*)address.address)
 			continue;
 
 		std::cout << "Patching: " << "0x" << std::hex << address.address << " in module: " << base << std::endl;
 
-		WriteProcessMemory(GetCurrentProcess(), (void*)(address.address), patch.data(), patch.size(), 0);
+		DWORD prot;
+		VirtualProtect((LPVOID)address.address, patch.size(), PAGE_EXECUTE_READWRITE, &prot);
+		memcpy((void*)address.address, patch.data(), patch.size());
+		VirtualProtect((LPVOID)address.address, patch.size(), prot, 0);
 	}
 
 	original_wndproc = (WNDPROC)SetWindowLongPtr(FindWindow("Valve001", 0), GWLP_WNDPROC, (LONG_PTR)hooked_wndproc);
-	end_scene_hook.hook(kiero::getMethodsTable()[42]);
-	create_move_hook.hook(memory::address_t({ "55 8B EC 56 8D 75 04 8B 0E E8 ? ? ? ? 8B 0E" }, memory::client_module));
-	frame_stage_notify_hook.hook(memory::address_t({ "55 8B EC 8B 0D ? ? ? ? 8B 01 8B 80 ? ? ? ? FF D0 A2 ? ? ? ?" }, memory::client_module));
+	end_scene_hook.hook(kiero::getMethodsTable()[42], end_scane_hooked_fn);
+	create_move_hook.hook(memory::address_t({ "55 8B EC 56 8D 75 04 8B 0E E8 ? ? ? ? 8B 0E" }, memory::client_module), create_move_hk);
+	frame_stage_notify_hook.hook(memory::address_t({ "55 8B EC 8B 0D ? ? ? ? 8B 01 8B 80 ? ? ? ? FF D0 A2 ? ? ? ?" }, memory::client_module), frame_stage_hk);
+	cl_move_hook.hook(memory::address_t({ "E8 ? ? ? ? FF 15 ? ? ? ? F2 0F 10 05 ? ? ? ? DC 25 ? ? ? ? DD 5D F0" }, memory::engine_module).absolute(0x1, 0x5), cl_move_hk);
 
 	for (auto& i : hooks_to_initialization())
 		internal::hook(i.address, i.new_function, i.original);
