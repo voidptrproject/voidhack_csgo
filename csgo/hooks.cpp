@@ -164,7 +164,7 @@ void hooks::initialize_hooks() {
 	end_scene_hook.hook(kiero::getMethodsTable()[42], end_scane_hooked_fn);
 	create_move_hook.hook(memory::address_t({ "55 8B EC 56 8D 75 04 8B 0E E8 ? ? ? ? 8B 0E" }, memory::client_module), create_move_hk);
 	frame_stage_notify_hook.hook(memory::address_t({ "55 8B EC 8B 0D ? ? ? ? 8B 01 8B 80 ? ? ? ? FF D0 A2 ? ? ? ?" }, memory::client_module), frame_stage_hk);
-	cl_move_hook.hook(memory::address_t({ "E8 ? ? ? ? FF 15 ? ? ? ? F2 0F 10 05 ? ? ? ? DC 25 ? ? ? ? DD 5D F0" }, memory::engine_module).absolute(0x1, 0x5), cl_move_hk);
+	//cl_move_hook.hook(memory::address_t({ "E8 ? ? ? ? FF 15 ? ? ? ? F2 0F 10 05 ? ? ? ? DC 25 ? ? ? ? DD 5D F0" }, memory::engine_module).absolute(0x1, 0x5), cl_move_hk);
 
 	for (auto& i : hooks_to_initialization())
 		internal::hook(i.address, i.new_function, i.original);
